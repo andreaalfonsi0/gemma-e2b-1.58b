@@ -48,7 +48,7 @@ from gemma4_model_loader import load_quantized_gemma4
 from multimodal_data_loader import (
     MultimodalBatch,
     MultimodalDataLoader,
-    create_synthetic_multimodal_batch,
+    create_hf_multimodal_batch,
 )
 
 
@@ -307,7 +307,7 @@ class QuantizedGemma4Trainer:
       
       for batch_idx in range(num_batches):
         # Create synthetic batch (replace with real data in production)
-        batch = create_synthetic_multimodal_batch(
+        batch = create_hf_multimodal_batch(
             batch_size=self.batch_size,
             seq_len=512,
             num_images=2,
