@@ -129,25 +129,32 @@ class QuantizedGemma4Trainer:
     self.dot_general = aqt_flax.AqtDotGeneral(self.quant_config)
   
   def _create_tpu_mesh(self) -> jax.sharding.Mesh:
-    """Create mesh for 8 TPU devices.
+    """Create mesh for 8 TPU devices with Auto axes for Shardy.
     
     Returns:
       JAX mesh with shape (1, 8) for tensor parallelism across 8 TPUs.
     """
-    device_count = jax.device_count()
+    devices = jax.devices()
+    device_count = len(devices)
     if device_count < 8:
-      logging.warning(
-          f'Requested 8 TPUs but only {device_count} available. '
-          'Using all available devices.'
-      )
-      device_count = min(8, device_count)
+        logging.warning(
+            f'Requested 8 TPUs but only {device_count} available. '
+            'Using all available devices.'
+        )
+    else:
+        # Limit to the first 8 devices if more are available
+        devices = devices[:8]
+        device_count = 8
     
-    # Create mesh: (fsdp, tp) = (1, 8) for tensor parallelism
-    mesh_shape = (1, device_count)
+    # Reshape the devices array to match (fsdp, tp) -> (1, 8)
+    devices_array = np.array(devices).reshape(1, device_count)
+    
     axis_names = ('fsdp', 'tp')
+    
+    # Explicitly set AxisType.Auto on both axes to satisfy the Gemma 4 / Tunix constraint
     axis_types = (AxisType.Auto, AxisType.Auto)
     
-    return Mesh(mesh_shape, axis_names=axis_names, axis_types=axis_types)
+    return Mesh(devices_array, axis_names=axis_names, axis_types=axis_types)
   
   def forward(
       self,
