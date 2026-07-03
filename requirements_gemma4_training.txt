@@ -1,0 +1,32 @@
+# Core dependencies
+jax>=0.4.20
+jaxlib>=0.4.20
+flax>=0.8.0
+optax>=0.2.0
+orbax-checkpoint>=0.5.0
+
+# Google research projects
+git+https://github.com/google/aqt.git@main
+git+https://github.com/google/tunix.git@main
+git+https://github.com/google/qwix.git@main
+
+# ML/Data processing
+numpy>=1.24.0
+tensorflow>=2.15.0
+grain>=0.10.0
+datasets>=2.14.0
+transformers>=4.35.0
+sentencepiece>=0.2.0
+
+# Multimodal
+pillow>=10.0.0
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# TPU-specific (auto-installed on Kaggle TPU environment)
+libtpu-nightly>=0.1.dev
+
+# Development
+tensorboard>=2.14.0
+pytest>=7.4.0
+absl-py>=1.0.0
