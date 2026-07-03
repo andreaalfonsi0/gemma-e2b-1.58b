@@ -118,8 +118,7 @@ def load_quantized_gemma4(
       checkpoint_path=checkpoint_path,
       model_config=model_config,
       mesh=mesh,
-      dtype=dtype,
-      text_only=text_only,
+      dtype=dtype
   )
   
   # Create quantization wrapper
