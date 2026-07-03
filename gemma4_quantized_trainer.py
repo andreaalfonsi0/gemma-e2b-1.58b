@@ -24,7 +24,7 @@ Run on Kaggle TPU machine:
 import dataclasses
 from typing import Any, Callable, Optional
 import os
-
+import numpy as np
 from absl import app
 from absl import flags
 from absl import logging
