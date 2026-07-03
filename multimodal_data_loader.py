@@ -21,6 +21,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from PIL import Image
+from typing import Any, Dict, Optional, Tuple
+from datasets import load_dataset
+from transformers import AutoTokenizer
 
 
 @dataclasses.dataclass
@@ -300,3 +303,115 @@ def create_synthetic_multimodal_batch(
           rng.randint(0, 262144, (batch_size, seq_len)), dtype=jnp.int32
       ),
   )
+
+def create_hf_multimodal_batch(
+    batch_size: int = 4,
+    seq_len: int = 512,
+    num_images: int = 2,
+    num_audio_clips: int = 1,
+    image_patch_dim: int = 768,
+) -> Any:  # Returns MultimodalBatch
+    """Create a multimodal batch fetching real data from Hugging Face.
+    
+    Streams real text and images from 'whyen-wang/coco_captions' 
+    and real audio from 'PolyAI/minds14'.
+    """
+    # 1. Load streaming datasets
+    # Using MS COCO for clean, reliable Image-Text pairs
+    vl_dataset = load_dataset("whyen-wang/coco_captions", split="train", streaming=True)
+    # Using a Speech dataset for Audio
+    audio_dataset = load_dataset("PolyAI/minds14", name="en-US", split="train", streaming=True, trust_remote_code=True)
+    
+    # 2. Tokenizer setup
+    tokenizer = AutoTokenizer.from_pretrained("google/gemma-4-E2B-it")
+    
+    vl_iter = iter(vl_dataset)
+    audio_iter = iter(audio_dataset)
+    
+    texts = []
+    images = []
+    audios = []
+    audio_lens = []
+    
+    # Fetch exact amounts of real data required to fill the dimensions
+    for _ in range(batch_size):
+        # Fetch Text (COCO provides a list of captions; we take the first one)
+        first_vl_sample = next(vl_iter)
+        texts.append(first_vl_sample['captions'][0])
+        
+        # Fetch multiple Images for this sample to fulfill `num_images` requirement
+        sample_images = [first_vl_sample['image']]
+        for _ in range(num_images - 1):
+            sample_images.append(next(vl_iter)['image'])
+        images.append(sample_images)
+        
+        # Fetch multiple Audio clips for this sample
+        sample_audio = []
+        sample_audio_lens = []
+        for _ in range(num_audio_clips):
+            a_sample = next(audio_iter)
+            audio_array = a_sample['audio']['array']
+            sample_audio.append(audio_array)
+            sample_audio_lens.append(len(audio_array))
+            
+        audios.append(sample_audio)
+        audio_lens.append(sample_audio_lens)
+
+    # 3. Process Text (Tokenization)
+    tokens = tokenizer(
+        texts, 
+        max_length=seq_len, 
+        padding="max_length", 
+        truncation=True, 
+        return_tensors="np"
+    )
+    
+    # 4. Process Images 
+    processed_images = np.zeros((batch_size, num_images, image_patch_dim), dtype=np.float32)
+    for b in range(batch_size):
+        for n in range(num_images):
+            # Convert to RGB and shrink significantly to simulate flat patches
+            img = images[b][n].convert("RGB").resize((16, 16)) 
+            img_array = np.array(img, dtype=np.float32).flatten()
+            
+            # Align flattened image to requested patch dimension
+            if len(img_array) > image_patch_dim:
+                img_array = img_array[:image_patch_dim]
+            else:
+                img_array = np.pad(img_array, (0, image_patch_dim - len(img_array)))
+                
+            processed_images[b, n, :] = img_array
+
+    # 5. Process Audio
+    max_audio_samples = 16000
+    processed_audio = np.zeros((batch_size, num_audio_clips, max_audio_samples), dtype=np.float32)
+    processed_audio_lengths = np.zeros((batch_size, num_audio_clips), dtype=np.int32)
+    
+    for b in range(batch_size):
+        for n in range(num_audio_clips):
+            audio_arr = audios[b][n]
+            if len(audio_arr) > max_audio_samples:
+                audio_arr = audio_arr[:max_audio_samples]
+            else:
+                audio_arr = np.pad(audio_arr, (0, max_audio_samples - len(audio_arr)))
+                
+            processed_audio[b, n, :] = audio_arr
+            processed_audio_lengths[b, n] = min(audio_lens[b][n], max_audio_samples)
+
+    # 6. Generate sequential placeholder coordinates for image positions
+    image_positions = np.zeros((batch_size, num_images, 2), dtype=np.int32)
+    for b in range(batch_size):
+        for n in range(num_images):
+            image_positions[b, n] = [n, n] 
+
+    # Note: Returning a dictionary here for structural compatibility, 
+    # but in your code, this maps perfectly to `MultimodalBatch(...)`.
+    return {
+        "input_ids": jnp.array(tokens["input_ids"], dtype=jnp.int32),
+        "attention_mask": jnp.array(tokens["attention_mask"], dtype=jnp.float32),
+        "image_patches": jnp.array(processed_images),
+        "image_positions": jnp.array(image_positions, dtype=jnp.int32),
+        "audio_waveforms": jnp.array(processed_audio),
+        "audio_lengths": jnp.array(processed_audio_lengths, dtype=jnp.int32),
+        "labels": jnp.array(tokens["input_ids"].copy(), dtype=jnp.int32),
+    }
