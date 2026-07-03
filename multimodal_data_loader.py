@@ -318,7 +318,7 @@ def create_hf_multimodal_batch(
     """
     # 1. Load streaming datasets
     # Using MS COCO for clean, reliable Image-Text pairs
-    vl_dataset = load_dataset("whyen-wang/coco_captions", split="train", streaming=True)
+    vl_dataset = load_dataset("whyen-wang/coco_captions", split="train", streaming=True, trust_remote_code=True)
     # Using a Speech dataset for Audio
     audio_dataset = load_dataset("PolyAI/minds14", name="en-US", split="train", streaming=True, trust_remote_code=True)
     
