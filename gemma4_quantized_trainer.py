@@ -35,6 +35,7 @@ from flax import nnx
 import jax
 import jax.numpy as jnp
 import jax.sharding as shd
+from jax.sharding import Mesh, AxisType
 import optax
 import orbax.checkpoint as ocp
 
@@ -144,8 +145,9 @@ class QuantizedGemma4Trainer:
     # Create mesh: (fsdp, tp) = (1, 8) for tensor parallelism
     mesh_shape = (1, device_count)
     axis_names = ('fsdp', 'tp')
+    axis_types = (AxisType.Auto, AxisType.Auto)
     
-    return jax.make_mesh(mesh_shape, axis_names)
+    return Mesh(devices_array, axis_names=axis_names, axis_types=axis_types)
   
   def forward(
       self,
