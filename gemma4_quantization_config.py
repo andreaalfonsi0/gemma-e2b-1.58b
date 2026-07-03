@@ -13,6 +13,7 @@
 # limitations under the License.
 """AQT v2 quantization configurations for Gemma 4 models."""
 
+import inspect
 from typing import Optional
 
 import aqt.jax.v2.config as aqt_config
@@ -22,25 +23,32 @@ from aqt.jax.v2.numerics import no_numerics
 import jax.numpy as jnp
 
 
+def _safe_create_tensor(numerics_obj, **kwargs) -> aqt_config.Tensor:
+  """Helper to safely instantiate aqt_config.Tensor across varying AQT versions."""
+  # Inspect the Tensor constructor to see what keyword it accepts
+  init_params = inspect.signature(aqt_config.Tensor.__init__).parameters
+  
+  if 'quantizer' in init_params:
+    kwargs['quantizer'] = numerics_obj
+  elif 'numerics' in init_params:
+    kwargs['numerics'] = numerics_obj
+  else:
+    # Fallback: if the field name changed entirely, try finding a parameter 
+    # that isn't one of the standard metadata fields.
+    known_metadata = {'self', 'calib_shared_axes', 'scale_stop_grad', 'calibration', 'po2_scale', 'use_fake_quant'}
+    possible_fields = [p for p in init_params if p not in known_metadata]
+    if possible_fields:
+      kwargs[possible_fields[0]] = numerics_obj
+      
+  return aqt_config.Tensor(**kwargs)
+
+
 def create_ternary_quantized_config(
     calibration_steps: int = 100,
     use_symmetric: bool = True,
 ) -> aqt_config.DotGeneral:
-  """Create ternary (2-bit) quantized configuration for efficient training.
+  """Create ternary (2-bit) quantized configuration for efficient training."""
   
-  Ternary quantization uses 2-bits which allows for 4 distinct values,
-  providing a good balance between model compression and accuracy.
-  Optimized for Gemma 4 models on TPUs.
-  
-  Args:
-    calibration_steps: Number of steps for calibration statistics gathering.
-    use_symmetric: Whether to use symmetric quantization (recommended for QAT).
-    
-  Returns:
-    DotGeneral config ready for injection into Flax Dense layers.
-  """
-  
-  # Ternary (2-bit) quantization config
   ternary_numerics = int_numerics.IntSymmetric(
       bits=2,
       preserve_zero=True,
@@ -48,15 +56,14 @@ def create_ternary_quantized_config(
       clip=True,
       clip_gradient=True,
       round=True,
-      noise_fn=None,  # No noise for deterministic training
+      noise_fn=None,
   )
   
-  # Statistics calibration using absolute max
   calib = calibration.AbsMaxCalibration()
   
   # Forward pass: Quantize activations and weights
-  fwd_tensor = aqt_config.Tensor(
-      quantizer=ternary_numerics,  # FIXED: Changed from numerics= to quantizer=
+  fwd_tensor = _safe_create_tensor(
+      numerics_obj=ternary_numerics,
       calib_shared_axes=-1,
       scale_stop_grad=True,
       calibration=calib,
@@ -65,26 +72,26 @@ def create_ternary_quantized_config(
   )
   
   fwd_dot_general_raw = aqt_config.DotGeneralRaw(
-      lhs=fwd_tensor,  # Activations
-      rhs=fwd_tensor,  # Weights
+      lhs=fwd_tensor,
+      rhs=fwd_tensor,
   )
   
   # Backward pass: Use no quantization for stability
-  bwd_no_quant = aqt_config.Tensor(
-      quantizer=no_numerics.NoNumerics(),  # FIXED: Changed from numerics= to quantizer=
+  bwd_no_quant = _safe_create_tensor(
+      numerics_obj=no_numerics.NoNumerics(),
       calib_shared_axes=-1,
       scale_stop_grad=True,
       calibration=calib,
   )
   
   dlhs_dot_general_raw = aqt_config.DotGeneralRaw(
-      lhs=bwd_no_quant,  # Gradient w.r.t. activations
-      rhs=fwd_tensor,    # Weights (frozen during backprop for efficiency)
+      lhs=bwd_no_quant,
+      rhs=fwd_tensor,
   )
   
   drhs_dot_general_raw = aqt_config.DotGeneralRaw(
-      lhs=bwd_no_quant,  # Gradient w.r.t. activations
-      rhs=bwd_no_quant,  # No gradient quantization
+      lhs=bwd_no_quant,
+      rhs=bwd_no_quant,
   )
   
   return aqt_config.DotGeneral(
@@ -97,17 +104,7 @@ def create_ternary_quantized_config(
 def create_int4_quantized_config(
     calibration_steps: int = 100,
 ) -> aqt_config.DotGeneral:
-  """Create INT4 quantized configuration for better accuracy than ternary.
-  
-  INT4 provides 16 distinct values, offering better accuracy with minimal
-  overhead compared to ternary quantization.
-  
-  Args:
-    calibration_steps: Number of steps for calibration statistics gathering.
-    
-  Returns:
-    DotGeneral config ready for injection into Flax Dense layers.
-  """
+  """Create INT4 quantized configuration for better accuracy than ternary."""
   
   int4_numerics = int_numerics.IntSymmetric(
       bits=4,
@@ -121,9 +118,8 @@ def create_int4_quantized_config(
   
   calib = calibration.AbsMaxCalibration()
   
-  # Forward pass quantization
-  fwd_tensor = aqt_config.Tensor(
-      quantizer=int4_numerics,  # FIXED: Changed from numerics= to quantizer=
+  fwd_tensor = _safe_create_tensor(
+      numerics_obj=int4_numerics,
       calib_shared_axes=-1,
       scale_stop_grad=True,
       calibration=calib,
@@ -136,9 +132,8 @@ def create_int4_quantized_config(
       rhs=fwd_tensor,
   )
   
-  # Backward pass with INT4 for weights, unquantized for gradients
-  bwd_no_quant = aqt_config.Tensor(
-      quantizer=no_numerics.NoNumerics(),  # FIXED: Changed from numerics= to quantizer=
+  bwd_no_quant = _safe_create_tensor(
+      numerics_obj=no_numerics.NoNumerics(),
       calib_shared_axes=-1,
       scale_stop_grad=True,
       calibration=calib,
@@ -165,18 +160,7 @@ def get_quantization_config(
     quant_type: str = "ternary",
     **kwargs
 ) -> aqt_config.DotGeneral:
-  """Factory function to get quantization config by type.
-  
-  Args:
-    quant_type: One of "ternary" (2-bit) or "int4".
-    **kwargs: Additional arguments passed to config creators.
-    
-  Returns:
-    DotGeneral config.
-    
-  Raises:
-    ValueError: If quant_type is not recognized.
-  """
+  """Factory function to get quantization config by type."""
   if quant_type == "ternary":
     return create_ternary_quantized_config(**kwargs)
   elif quant_type == "int4":
