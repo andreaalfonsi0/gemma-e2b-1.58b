@@ -116,9 +116,12 @@ class QuantizedGemma4Trainer:
       )
     
     # Optimizer
-    schedule = optax.warmup_linear(
-        FLAGS.warmup_steps,
-        learning_rate,
+    schedule = optax.warmup_cosine_decay_schedule(
+        init_value=0.0,
+        peak_value=learning_rate,
+        warmup_steps=FLAGS.warmup_steps,
+        decay_steps=20000,
+        end_value=0.0  # often 0.0 or a fraction of peak_value
     )
     self.optimizer = optax.chain(
         optax.clip_by_global_norm(1.0),
