@@ -147,7 +147,7 @@ class QuantizedGemma4Trainer:
     axis_names = ('fsdp', 'tp')
     axis_types = (AxisType.Auto, AxisType.Auto)
     
-    return Mesh(devices_array, axis_names=axis_names, axis_types=axis_types)
+    return Mesh(mesh_shape, axis_names=axis_names, axis_types=axis_types)
   
   def forward(
       self,
