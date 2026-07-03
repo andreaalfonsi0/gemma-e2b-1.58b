@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ def create_ternary_quantized_config(
   
   # Forward pass: Quantize activations and weights
   fwd_tensor = aqt_config.Tensor(
-      numerics=ternary_numerics,
+      quantizer=ternary_numerics,  # FIXED: Changed from numerics= to quantizer=
       calib_shared_axes=-1,
       scale_stop_grad=True,
       calibration=calib,
@@ -71,7 +71,7 @@ def create_ternary_quantized_config(
   
   # Backward pass: Use no quantization for stability
   bwd_no_quant = aqt_config.Tensor(
-      numerics=no_numerics.NoNumerics(),
+      quantizer=no_numerics.NoNumerics(),  # FIXED: Changed from numerics= to quantizer=
       calib_shared_axes=-1,
       scale_stop_grad=True,
       calibration=calib,
@@ -123,7 +123,7 @@ def create_int4_quantized_config(
   
   # Forward pass quantization
   fwd_tensor = aqt_config.Tensor(
-      numerics=int4_numerics,
+      quantizer=int4_numerics,  # FIXED: Changed from numerics= to quantizer=
       calib_shared_axes=-1,
       scale_stop_grad=True,
       calibration=calib,
@@ -138,7 +138,7 @@ def create_int4_quantized_config(
   
   # Backward pass with INT4 for weights, unquantized for gradients
   bwd_no_quant = aqt_config.Tensor(
-      numerics=no_numerics.NoNumerics(),
+      quantizer=no_numerics.NoNumerics(),  # FIXED: Changed from numerics= to quantizer=
       calib_shared_axes=-1,
       scale_stop_grad=True,
       calibration=calib,
